@@ -19,6 +19,7 @@ all: bundle
 
 build:
 	swift build -c $(CONFIG)
+	cd LogBridgeAgent && ./gradlew build
 
 bundle: build
 	@test -f "$(INFO_PLIST)" || (echo "Missing: $(INFO_PLIST)" && exit 1)
