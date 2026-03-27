@@ -36,7 +36,9 @@ func startSocket() {
         if bytesRead > 0 {
             if buffer[0] <= 1 {
                 if let message: String = .init(bytes: buffer[1..<bytesRead], encoding: .utf8) {
-                    fputs(message, buffer[0] == 0 ? stdout : stderr)
+                    let stream: UnsafeMutablePointer<FILE> = buffer[0] == 0 ? stdout : stderr
+                    fputs(message, stream)
+                    fflush(stream)
                 }
             }
         } else if bytesRead == 0 {
@@ -72,8 +74,6 @@ runnerArguments.insert(
     "-javaagent:\(appBundleURL.appending(path: "Contents/Resources/log-bridge-agent.jar").path)=\(socketPath)",
     at: 2
 )
-
-print(runnerArguments)
 
 let configuration: NSWorkspace.OpenConfiguration = .init()
 configuration.createsNewApplicationInstance = true
