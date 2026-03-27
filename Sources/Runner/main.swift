@@ -10,7 +10,9 @@ import AppKit
 
 func launch() {
 //    var pid: pid_t = 0
-    let arguments: [String] = Array(ProcessInfo.processInfo.arguments.dropFirst())
+    let workingDirectory: String = ProcessInfo.processInfo.arguments[1]
+    chdir(workingDirectory)
+    let arguments: [String] = Array(ProcessInfo.processInfo.arguments.dropFirst(2))
     let executablePath: String = arguments[0]
     let argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
     argv.withUnsafeBufferPointer { buffer in

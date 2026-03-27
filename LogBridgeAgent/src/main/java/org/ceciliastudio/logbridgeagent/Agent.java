@@ -21,8 +21,8 @@ public class Agent {
 
         try {
             SocketChannel channel = createSocketChannel(socketPath);
-            System.setOut(new PrintStream(new BridgedOutputStream(channel, System.out, false)));
-            System.setErr(new PrintStream(new BridgedOutputStream(channel, System.err, true)));
+            System.setOut(new PrintStream(new BridgedOutputStream(channel, System.out, false), true));
+            System.setErr(new PrintStream(new BridgedOutputStream(channel, System.err, true), true));
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 synchronized (channel) {
                     try {
