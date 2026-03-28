@@ -8,6 +8,10 @@
 import Foundation
 import AppKit
 
+func log(_ message: String, error: Bool = false) {
+    fputs("[GameStub Launcher] \(message)\n", error ? stderr : stdout)
+}
+
 let dateFormatter: DateFormatter = .init()
 dateFormatter.dateFormat = "yyyy_MM_dd-HH-mm-ss"
 let socketPath: String = "/tmp/gamestub-\(dateFormatter.string(from: .now)).sock"
@@ -24,14 +28,14 @@ withUnsafePointer(to: &addr) {
     }
 }
 
-print("[GameStub Launcher] Listening UDS")
+log("Listening for UDS connections: \(socketPath)")
 listen(serverSocket, 1)
 
 func startSocket() {
     defer { unlink(socketPath) }
     
     let clientSocket = accept(serverSocket, nil, nil)
-    print("[GameStub Launcher] UDS connected")
+    log("UDS connection accepted")
     var lastMessages: [String] = []
     var javaQuited: Bool = false
     
@@ -49,17 +53,17 @@ func startSocket() {
                     fputs(message, stream)
                     fflush(stream)
                 } else {
-                    print("[GameStub Launcher] Parse failed")
+                    log("Failed to decode UTF-8 message (bytesRead=\(bytesRead))", error: true)
                 }
             } else if buffer[0] == 0xFF {
                 javaQuited = true
             }
         } else if bytesRead == 0 {
             if lastMessages.contains(where: { $0.contains("#@!@# Game crashed!") }) {
-                print("[GameStub Launcher] The game seems crashed (Minecraft crash log detected)")
+                log("Game crashed (Minecraft crash log marker detected)")
                 exit(1)
             } else if !javaQuited {
-                print("[GameStub Launcher] The JVM seems crashed")
+                log("JVM terminated unexpectedly (unexpected socket EOF)")
                 exit(1)
             }
             exit(0)
@@ -74,12 +78,12 @@ let arguments: [String] = ProcessInfo.processInfo.arguments
 
 var appBundleURL: URL = .init(fileURLWithPath: arguments[0])
 guard FileManager.default.fileExists(atPath: appBundleURL.path) else {
-    print("[GameStub Launcher] Error: The executable file '\(arguments[0])' not exists")
+    log("Executable does not exist: \(arguments[0])", error: true)
     exit(EXIT_FAILURE)
 }
 while true {
     if appBundleURL.pathComponents.count <= 1 {
-        print("[GameStub Launcher] Error: App bundle not found")
+        log("App bundle not found (failed to locate a .app bundle in parent directories)", error: true)
         exit(EXIT_FAILURE)
     }
     appBundleURL = appBundleURL.deletingLastPathComponent()
@@ -102,12 +106,12 @@ configuration.arguments = runnerArguments
 
 NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuration) { application, error in
     if let error {
-        print("[GameStub Launcher] Error: Application launch failed: \n\(error)")
+        log("Failed to launch application: \(error.localizedDescription)", error: true)
         exit(EXIT_FAILURE)
     }
     if let application {
         let pid: Int32 = application.processIdentifier
-        print("[GameStub Launcher] Application launch successed, PID: \(pid)")
+        log("Application launched successfully (pid=\(pid))")
         startSocket()
     }
 }
