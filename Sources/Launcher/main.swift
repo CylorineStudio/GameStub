@@ -28,20 +28,40 @@ print("[GameStub Launcher] Listening UDS")
 listen(serverSocket, 1)
 
 func startSocket() {
+    defer { unlink(socketPath) }
+    
     let clientSocket = accept(serverSocket, nil, nil)
     print("[GameStub Launcher] UDS connected")
+    var lastMessages: [String] = []
+    var javaQuited: Bool = false
+    
     while true {
-        var buffer: [UInt8] = .init(repeating: 0, count: 1024)
+        var buffer: [UInt8] = .init(repeating: 0, count: 16384)
         let bytesRead = read(clientSocket, &buffer, buffer.count)
         if bytesRead > 0 {
             if buffer[0] <= 1 {
                 if let message: String = .init(bytes: buffer[1..<bytesRead], encoding: .utf8) {
+                    if lastMessages.count >= 10 {
+                        lastMessages.removeAll()
+                    }
+                    lastMessages.append(message)
                     let stream: UnsafeMutablePointer<FILE> = buffer[0] == 0 ? stdout : stderr
                     fputs(message, stream)
                     fflush(stream)
+                } else {
+                    print("[GameStub Launcher] Parse failed")
                 }
+            } else if buffer[0] == 0xFF {
+                javaQuited = true
             }
         } else if bytesRead == 0 {
+            if lastMessages.contains(where: { $0.contains("#@!@# Game crashed!") }) {
+                print("[GameStub Launcher] The game seems crashed (Minecraft crash log detected)")
+                exit(1)
+            } else if !javaQuited {
+                print("[GameStub Launcher] The JVM seems crashed")
+                exit(1)
+            }
             exit(0)
         } else {
             perror("read")
@@ -79,11 +99,6 @@ let configuration: NSWorkspace.OpenConfiguration = .init()
 configuration.createsNewApplicationInstance = true
 configuration.activates = false
 configuration.arguments = runnerArguments
-
-//let process: Process = .init()
-//process.executableURL = URL(fileURLWithPath: runnerArguments[0])
-//process.arguments = Array(runnerArguments.dropFirst())
-//try process.run()
 
 NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuration) { application, error in
     if let error {
