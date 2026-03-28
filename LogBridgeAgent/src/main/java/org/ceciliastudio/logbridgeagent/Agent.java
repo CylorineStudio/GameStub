@@ -12,9 +12,13 @@ import java.nio.file.Path;
 public class Agent {
     public static void premain(String agentArgs, Instrumentation inst) {
         System.out.println("[GameStub LogBridge] Premain loaded. agentArgs: " + agentArgs);
+        if (agentArgs == null) {
+            System.err.println("[GameStub LogBridge] agentArgs is null");
+            return;
+        }
         Path socketPath = Path.of(agentArgs);
         if (!Files.exists(socketPath)) {
-            System.err.println("[GameStub LogBridge] the socket file does not exists: " + socketPath);
+            System.err.println("[GameStub LogBridge] The socket file does not exist: " + socketPath);
             System.exit(40);
         }
 

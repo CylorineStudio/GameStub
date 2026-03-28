@@ -1,6 +1,5 @@
 package org.ceciliastudio.logbridgeagent;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
@@ -9,13 +8,10 @@ public class BridgedOutputStream extends OutputStream {
     private final OutputStream standardOutputStream;
     private final boolean isError;
 
-    private final ByteArrayOutputStream lineBuffer;
-
     public BridgedOutputStream(SharedSocketWriter writer, OutputStream standardOutputStream, boolean isError) throws IOException {
         this.writer = writer;
         this.standardOutputStream = standardOutputStream;
         this.isError = isError;
-        this.lineBuffer = new ByteArrayOutputStream();
     }
 
     @Override
@@ -37,21 +33,6 @@ public class BridgedOutputStream extends OutputStream {
     @Override
     public void flush() throws IOException {
         this.standardOutputStream.flush();
-        if (this.writer.isDegraded()) return;
-
-        byte[] pending = this.lineBuffer.toByteArray();
-        if (pending.length > 0) {
-            this.lineBuffer.reset();
-            this.writer.write(payload(pending, this.isError));
-        }
-    }
-
-    @Override
-    public void close() throws IOException {
-        try {
-            this.flush();
-        } catch (IOException ignored) {}
-        this.standardOutputStream.close();
     }
 
     private static byte[] payload(byte[] lineBytes, boolean isError) {

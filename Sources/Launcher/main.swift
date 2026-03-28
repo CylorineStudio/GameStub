@@ -20,13 +20,25 @@ func makeServerSocket() -> (String, Int32) {
     unlink(socketPath)
     
     let serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
+    if serverSocket < 0 {
+        perror("socket")
+        log("Unable to relay logs and detect process termination, exiting", error: true)
+        exit(1)
+    }
+    
     var addr = sockaddr_un()
     addr.sun_family = sa_family_t(AF_UNIX)
     strcpy(&addr.sun_path.0, socketPath)
-    withUnsafePointer(to: &addr) {
+    let bindResult: Int32 = withUnsafePointer(to: &addr) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            _ = bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
         }
+    }
+    if bindResult != 0 {
+        perror("socket")
+        log("Unable to relay logs and detect process termination, exiting", error: true)
+        close(serverSocket)
+        exit(1)
     }
     
     return (socketPath, serverSocket)
@@ -61,7 +73,10 @@ log("Listening for UDS connections: \(socketPath)")
 listen(serverSocket, 1)
 
 func startSocket() {
-    defer { unlink(socketPath) }
+    defer {
+        close(serverSocket)
+        unlink(socketPath)
+    }
     
     guard let clientSocket: Int32 = acceptWithTimeout(serverSocket: serverSocket, timeoutMilliseconds: 10_000) else {
         log("UDS accept timed out after 10s", error: true)
@@ -69,9 +84,10 @@ func startSocket() {
         exit(0)
     }
     log("UDS connection accepted")
+    defer { close(clientSocket) }
     
     var lastMessages: [String] = []
-    var javaQuited: Bool = false
+    var javaQuitReceived: Bool = false
     
     while true {
         var buffer: [UInt8] = .init(repeating: 0, count: 16384)
@@ -80,7 +96,7 @@ func startSocket() {
             if buffer[0] <= 1 {
                 if let message: String = .init(bytes: buffer[1..<bytesRead], encoding: .utf8) {
                     if lastMessages.count >= 10 {
-                        lastMessages.removeAll()
+                        lastMessages.removeFirst()
                     }
                     lastMessages.append(message)
                     let stream: UnsafeMutablePointer<FILE> = buffer[0] == 0 ? stdout : stderr
@@ -90,13 +106,13 @@ func startSocket() {
                     log("Failed to decode UTF-8 message (bytesRead=\(bytesRead))", error: true)
                 }
             } else if buffer[0] == 0xFF {
-                javaQuited = true
+                javaQuitReceived = true
             }
         } else if bytesRead == 0 {
             if lastMessages.contains(where: { $0.contains("#@!@# Game crashed!") }) {
                 log("Game crashed (Minecraft crash log marker detected)")
                 exit(1)
-            } else if !javaQuited {
+            } else if !javaQuitReceived {
                 log("JVM terminated unexpectedly (unexpected socket EOF)")
                 exit(1)
             }
@@ -167,7 +183,9 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         intSource.resume()
         log("SIGTERM/SIGINT handlers registered")
         
-        startSocket()
+        DispatchQueue.global(qos: .background).async {
+            startSocket()
+        }
     }
 }
 dispatchMain()

@@ -10,7 +10,10 @@ import AppKit
 
 func launch() {
     let workingDirectory: String = ProcessInfo.processInfo.arguments[1]
-    chdir(workingDirectory)
+    if chdir(workingDirectory) != 0 {
+        perror("chdir")
+        exit(EXIT_FAILURE)
+    }
     let arguments: [String] = Array(ProcessInfo.processInfo.arguments.dropFirst(2))
     let executablePath: String = arguments[0]
     let argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
