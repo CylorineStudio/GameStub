@@ -10,23 +10,52 @@ import AppKit
 
 func log(_ message: String, error: Bool = false) {
     fputs("[GameStub Launcher] \(message)\n", error ? stderr : stdout)
+    fflush(error ? stderr : stdout)
 }
 
-let dateFormatter: DateFormatter = .init()
-dateFormatter.dateFormat = "yyyy_MM_dd-HH-mm-ss"
-let socketPath: String = "/tmp/gamestub-\(dateFormatter.string(from: .now)).sock"
-
-unlink(socketPath)
-
-let serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-var addr = sockaddr_un()
-addr.sun_family = sa_family_t(AF_UNIX)
-strcpy(&addr.sun_path.0, socketPath)
-withUnsafePointer(to: &addr) {
-    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-        _ = bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+func makeServerSocket() -> (String, Int32) {
+    let dateFormatter: DateFormatter = .init()
+    dateFormatter.dateFormat = "yyyy_MM_dd-HH-mm-ss"
+    let socketPath: String = "/tmp/gamestub-\(dateFormatter.string(from: .now)).sock"
+    unlink(socketPath)
+    
+    let serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    strcpy(&addr.sun_path.0, socketPath)
+    withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            _ = bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
     }
+    
+    return (socketPath, serverSocket)
 }
+
+func acceptWithTimeout(serverSocket: Int32, timeoutMilliseconds: Int32) -> Int32? {
+    var pfd: pollfd = .init()
+    pfd.fd = serverSocket
+    pfd.events = Int16(POLLIN)
+    pfd.revents = 0
+    
+    let rc: Int32 = poll(&pfd, 1, timeoutMilliseconds)
+    if rc == 0 {
+        return nil // timeout
+    }
+    if rc < 0 {
+        perror("poll")
+        return nil
+    }
+    
+    let clientSocket: Int32 = accept(serverSocket, nil, nil)
+    if clientSocket < 0 {
+        perror("accept")
+        return nil
+    }
+    return clientSocket
+}
+
+let (socketPath, serverSocket) = makeServerSocket()
 
 log("Listening for UDS connections: \(socketPath)")
 listen(serverSocket, 1)
@@ -34,8 +63,13 @@ listen(serverSocket, 1)
 func startSocket() {
     defer { unlink(socketPath) }
     
-    let clientSocket = accept(serverSocket, nil, nil)
+    guard let clientSocket: Int32 = acceptWithTimeout(serverSocket: serverSocket, timeoutMilliseconds: 10_000) else {
+        log("UDS accept timed out after 10s", error: true)
+        log("Unable to relay logs and detect process termination, exiting", error: true)
+        exit(0)
+    }
     log("UDS connection accepted")
+    
     var lastMessages: [String] = []
     var javaQuited: Bool = false
     
@@ -112,6 +146,27 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
     if let application {
         let pid: Int32 = application.processIdentifier
         log("Application launched successfully (pid=\(pid))")
+        
+        signal(SIGTERM, SIG_IGN)
+        signal(SIGINT, SIG_IGN)
+        
+        let termSource: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        termSource.setEventHandler {
+            log("Received SIGTERM, exiting")
+            kill(pid, SIGTERM)
+            exit(0)
+        }
+        termSource.resume()
+        
+        let intSource: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        intSource.setEventHandler {
+            log("Received SIGINT, exiting")
+            kill(pid, SIGTERM)
+            exit(0)
+        }
+        intSource.resume()
+        log("SIGTERM/SIGINT handlers registered")
+        
         startSocket()
     }
 }
