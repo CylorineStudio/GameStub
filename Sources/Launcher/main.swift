@@ -154,6 +154,9 @@ configuration.createsNewApplicationInstance = true
 configuration.activates = false
 configuration.arguments = runnerArguments
 
+var termSource: DispatchSourceSignal?
+var intSource: DispatchSourceSignal?
+
 NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuration) { application, error in
     if let error {
         log("Failed to launch application: \(error.localizedDescription)", error: true)
@@ -163,25 +166,26 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         let pid: Int32 = application.processIdentifier
         log("Application launched successfully (pid=\(pid))")
         
-        signal(SIGTERM, SIG_IGN)
-        signal(SIGINT, SIG_IGN)
-        
-        let termSource: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        termSource.setEventHandler {
-            log("Received SIGTERM, exiting")
-            kill(pid, SIGTERM)
-            exit(0)
+        Task { @MainActor in
+            signal(SIGTERM, SIG_IGN)
+            signal(SIGINT, SIG_IGN)
+            
+            let handler: () -> Void = {
+                kill(pid, SIGTERM)
+                exit(0)
+            }
+            
+            let term: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+            term.setEventHandler(handler: handler)
+            term.resume()
+            termSource = term
+            
+            let intr: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+            intr.setEventHandler(handler: handler)
+            intr.resume()
+            intSource = intr
+            log("SIGTERM/SIGINT handlers registered")
         }
-        termSource.resume()
-        
-        let intSource: DispatchSourceSignal = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        intSource.setEventHandler {
-            log("Received SIGINT, exiting")
-            kill(pid, SIGTERM)
-            exit(0)
-        }
-        intSource.resume()
-        log("SIGTERM/SIGINT handlers registered")
         
         DispatchQueue.global(qos: .background).async {
             startSocket()
