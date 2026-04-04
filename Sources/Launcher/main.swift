@@ -142,12 +142,20 @@ while true {
     }
 }
 
-var runnerArguments: [String] = Array(arguments.dropFirst())
-runnerArguments.insert(FileManager.default.currentDirectoryPath, at: 0)
-runnerArguments.insert(
-    "-javaagent:\(appBundleURL.appending(path: "Contents/Resources/log-bridge-agent.jar").path)=\(socketPath)",
-    at: 2
-)
+var runnerArguments: [String] = [
+    "--holder",
+    "--working-directory", FileManager.default.currentDirectoryPath,
+    "--args"
+] + arguments.dropFirst()
+
+print(runnerArguments)
+
+//let process: Process = .init()
+//process.executableURL = appBundleURL.appending(path: "Contents/MacOS/runner")
+//process.arguments = runnerArguments
+//process.currentDirectoryURL = .init(filePath: FileManager.default.currentDirectoryPath)
+//try process.run()
+
 
 let configuration: NSWorkspace.OpenConfiguration = .init()
 configuration.createsNewApplicationInstance = true
@@ -171,6 +179,7 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
             signal(SIGINT, SIG_IGN)
             
             let handler: () -> Void = {
+                if application.isTerminated { return }
                 kill(pid, SIGTERM)
                 exit(0)
             }
@@ -188,7 +197,7 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         }
         
         DispatchQueue.global(qos: .background).async {
-            startSocket()
+//            startSocket()
         }
     }
 }
