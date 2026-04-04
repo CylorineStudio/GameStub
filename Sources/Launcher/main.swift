@@ -87,7 +87,7 @@ func startSocket() {
     defer { close(clientSocket) }
     
     var lastMessages: [String] = []
-    var javaQuitReceived: Bool = false
+    var exitCode: Int32?
     
     while true {
         var buffer: [UInt8] = .init(repeating: 0, count: 16384)
@@ -106,17 +106,15 @@ func startSocket() {
                     log("Failed to decode UTF-8 message (bytesRead=\(bytesRead))", error: true)
                 }
             } else if buffer[0] == 0xFF {
-                javaQuitReceived = true
+                exitCode = buffer.dropFirst().withUnsafeBytes { $0.load(as: Int32.self) }
             }
         } else if bytesRead == 0 {
-            if lastMessages.contains(where: { $0.contains("#@!@# Game crashed!") }) {
-                log("Game crashed (Minecraft crash log marker detected)")
-                exit(1)
-            } else if !javaQuitReceived {
-                log("JVM terminated unexpectedly (unexpected socket EOF)")
+            guard let exitCode else {
+                log("JVM holder terminated unexpectedly (unexpected socket EOF)", error: true)
                 exit(1)
             }
-            exit(0)
+            log("Game exited with exit code \(exitCode)")
+            exit(exitCode)
         } else {
             perror("read")
             exit(1)
@@ -145,10 +143,9 @@ while true {
 var runnerArguments: [String] = [
     "--holder",
     "--working-directory", FileManager.default.currentDirectoryPath,
+    "--socket-path", socketPath,
     "--args"
 ] + arguments.dropFirst()
-
-print(runnerArguments)
 
 //let process: Process = .init()
 //process.executableURL = appBundleURL.appending(path: "Contents/MacOS/runner")
@@ -197,7 +194,7 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         }
         
         DispatchQueue.global(qos: .background).async {
-//            startSocket()
+            startSocket()
         }
     }
 }
