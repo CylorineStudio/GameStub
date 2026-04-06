@@ -1,26 +1,88 @@
 # GameStub
 
-[简体中文](/.github/README_zh-CN.md)
+[简体中文](.github/README_zh-CN.md)
 
-## What is this?
-A macOS app written in Swift that enables the Game Mode (introduced in macOS Sonoma) for Java-based games such as Minecraft.
+## Introduction
+GameStub is a Swift program that enables macOS Game Mode for Java games such as Minecraft.
 
-## How to use?
+## Usage
 
 ### For launcher developers
-When creating the game process, change the executable path to `/path/to/GameStub.app/Contents/Resources/launcher` and prepend the absolute path of `java` to the arguments. This will activate the Game Mode.
+When creating the game process, replace the executable path with:
 
-### For players
-If your launcher supports setting a "Wrapper Command", simply enter `/path/to/GameStub.app/Contents/Resources/launcher` into the field.
+```bash
+/path/to/GameStub.app/Contents/Resources/launcher
+```
 
-## What does it do?
-1. `launcher` starts the main executable (which we call `runner`) via `NSWorkspace.openApplication`.
-2. After `runner` is registered as a Game App, it replaces the current process with the `java` process using `execv`, allowing the game to inherit the Game App identity.
+and insert the absolute path to `java` before the arguments.
 
-> [!WARNING]
-> When Game Mode is active, macOS may reduce the performance of the launcher process. If `runner` is a child or descendant process of the launcher, its performance will also be degraded.<br>
-> `launcher` uses `NSWorkspace.openApplication` to entrust `runner` to `launchd` to avoid game performance degradation. However, this approach prevents log and return value transmission.<br>
-> We may add a Java Agent in future versions to transmit `stdout`, `stderr`, and the exit code to `launcher` via a socket, which will then forward them to the launcher.<br>
+### For regular users
+If your launcher supports a “wrapper command”, simply set the field to the path above.
 
-## How it works?
-I don't know, it's probably... magic ✨
+## How it works
+- `launcher`: starts `holder` and is invoked by the launcher side.
+- `holder`: starts and manages `runner`, and sends live logs, exit codes, and other data to `launcher` through a Unix Domain Socket.
+- `runner`: starts the game and makes the game process inherit its Game App identity.
+
+### Startup flow
+```mermaid
+sequenceDiagram
+    participant L as launcher
+    participant H as holder
+    participant R as runner
+    participant J as java
+
+    activate L
+    L->>L: Create a UDS and start listening
+    L->>H: Start holder via NSWorkspace.openApplication
+    activate H
+    H->>L: Connect to UDS
+    H->>R: Start runner
+    activate R
+    R->>R: Call NSApplication.shared.run() to make runner recognized by the system as a Game App
+    R->>J: execv replaces the process with java
+    Note over R,J: The game inherits the Game App identity
+    deactivate R
+    activate J
+
+    loop While the game is running
+        J-->>H: Write to stdout/stderr
+        H-->>L: Forward logs
+        L->>L: Parse and print
+    end
+    
+    J-->>H: Game exits
+    deactivate J
+    H->>L: Return the exit code through UDS
+    H->>H: Exit
+    deactivate H
+    L->>L: Exit with that code
+    deactivate L
+```
+
+<details>
+<summary>
+Key implementation notes
+</summary>
+
+#### 1. Why use `NSWorkspace.openApplication` to start `holder`?
+When Game Mode is active, macOS reduces the performance of background apps. If `GameStub` is a child process of another app, such as a launcher, both it and the game process may be throttled.<br>
+Starting `holder` via `NSWorkspace.openApplication` lets it escape the launcher process tree and avoids being affected by that throttling.
+
+#### 2. Why can `NSApplication.shared.run()` make `runner` be recognized as a Game App?
+Because `runner` already has App Bundle identity and a Game category declaration, `NSApplication.shared.run()` only puts it into AppKit runtime mode, allowing the system to recognize it as a Game App.
+</details>
+
+## System Requirements
+macOS 14.0+ (Apple Silicon)<br>
+This is also the system requirement for Game Mode.
+
+## Installation
+
+### Build from source (using `make`)
+```bash
+git clone https://github.com/CylorineStudio/GameStub.git && cd GameStub
+make
+```
+
+The build artifact is located at `dist/GameStub.app`.
