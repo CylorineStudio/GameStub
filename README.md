@@ -21,7 +21,7 @@ If your launcher supports a “wrapper command”, simply set the field to the p
 
 ## How it works
 - `launcher`: starts `holder` and is invoked by the launcher side.
-- `holder`: starts and manages `runner`, and sends live logs, exit codes, and other data to `launcher` through a Unix Domain Socket.
+- `holder` (`runner` in `--holder` mode): starts and manages `runner`, and sends live logs, exit codes, and other data to `launcher` through a Unix Domain Socket.
 - `runner`: starts the game and makes the game process inherit its Game App identity.
 
 ### Startup flow
