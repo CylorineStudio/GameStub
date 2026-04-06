@@ -52,7 +52,7 @@ sequenceDiagram
     H->>L: 通过 UDS 返回退出代码
     H->>H: 退出
     deactivate H
-    L->>L: 以该退出代码退出
+    L->>L: 以该代码退出
     deactivate L
 ```
 
