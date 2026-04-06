@@ -15,12 +15,15 @@ LAUNCHER_BIN := $(BUILD_DIR)/launcher
 
 AGENT_BUILD_DIR := LogBridgeAgent/build/libs
 
+SWIFT_DEFINES ?=
+SWIFT_FLAGS := $(foreach d,$(SWIFT_DEFINES),-Xswiftc -D -Xswiftc $(d))
+
 .PHONY: all build bundle clean
 
 all: bundle
 
 build:
-	swift build -c $(CONFIG)
+	swift build -c $(CONFIG) $(SWIFT_FLAGS)
 	cd LogBridgeAgent && ./gradlew build
 
 bundle: build

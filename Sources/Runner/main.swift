@@ -57,11 +57,20 @@ func connectSocket(at path: String) -> Int32? {
     
     var addr = sockaddr_un()
     addr.sun_family = sa_family_t(AF_UNIX)
+    
     let bytes = path.utf8CString
+    let sunPathCapacity: Int = MemoryLayout.size(ofValue: addr.sun_path)
+    
+    guard bytes.count <= sunPathCapacity else {
+        fputs("socket path too long (len=\(bytes.count), cap=\(sunPathCapacity))\n", stderr)
+        close(sockfd)
+        return nil
+    }
+    
     withUnsafeMutablePointer(to: &addr.sun_path) { sunptr in
-        let buffer = UnsafeMutableRawPointer(sunptr).assumingMemoryBound(to: CChar.self)
-        _ = bytes.withUnsafeBufferPointer { ptr in
-            memcpy(buffer, ptr.baseAddress, bytes.count)
+        let dst = UnsafeMutableRawPointer(sunptr).assumingMemoryBound(to: CChar.self)
+        _ = bytes.withUnsafeBufferPointer { src in
+            memcpy(dst, src.baseAddress, bytes.count)
         }
     }
     let len = socklen_t(MemoryLayout<sa_family_t>.size + bytes.count)
@@ -79,19 +88,17 @@ func connectSocket(at path: String) -> Int32? {
 }
 
 func send(data: Data, to sockfd: Int32, type: UInt8, queue: DispatchQueue, completion: (@Sendable () -> Void)? = nil) {
+    let payload: Data = [type] + data
     queue.async {
-        let payload: Data = [type] + data
-        queue.async {
-            payload.withUnsafeBytes {
-                let base = $0.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                var written: Int = 0
-                while written < payload.count {
-                    let rc = write(sockfd, base! + written, payload.count - written)
-                    if rc <= 0 { break }
-                    written += rc
-                }
-                completion?()
+        payload.withUnsafeBytes {
+            let base = $0.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            var written: Int = 0
+            while written < payload.count {
+                let rc = write(sockfd, base! + written, payload.count - written)
+                if rc <= 0 { break }
+                written += rc
             }
+            completion?()
         }
     }
 }

@@ -106,7 +106,16 @@ func startSocket() {
                     log("Failed to decode UTF-8 message (bytesRead=\(bytesRead))", error: true)
                 }
             } else if buffer[0] == 0xFF {
-                exitCode = buffer.dropFirst().withUnsafeBytes { $0.load(as: Int32.self) }
+                let exitCodeSize: Int = MemoryLayout<Int32>.size
+                guard bytesRead >= 1 + exitCodeSize else {
+                    log("Incomplete exit code message (bytesRead=\(bytesRead))", error: true)
+                    exit(1)
+                }
+                var decodedExitCode: Int32 = 0
+                withUnsafeMutableBytes(of: &decodedExitCode) { destination in
+                    destination.copyBytes(from: buffer[1..<(1 + exitCodeSize)])
+                }
+                exitCode = decodedExitCode
             }
         } else if bytesRead == 0 {
             guard let exitCode else {
@@ -147,12 +156,15 @@ var runnerArguments: [String] = [
     "--args"
 ] + arguments.dropFirst()
 
-//let process: Process = .init()
-//process.executableURL = appBundleURL.appending(path: "Contents/MacOS/runner")
-//process.arguments = runnerArguments
-//process.currentDirectoryURL = .init(filePath: FileManager.default.currentDirectoryPath)
-//try process.run()
+#if DEBUG_PROCESS_LAUNCH
 
+let process: Process = .init()
+process.executableURL = appBundleURL.appending(path: "Contents/MacOS/runner")
+process.arguments = runnerArguments
+process.currentDirectoryURL = .init(filePath: FileManager.default.currentDirectoryPath)
+try process.run()
+
+#else
 
 let configuration: NSWorkspace.OpenConfiguration = .init()
 configuration.createsNewApplicationInstance = true
@@ -198,4 +210,7 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         }
     }
 }
+
+#endif
+
 dispatchMain()
