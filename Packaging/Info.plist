@@ -16,6 +16,7 @@
 	<true/>
 	<key>CFBundleExecutable</key>
 	<string>runner</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The game process is requesting microphone permission.</string>
 </dict>
 </plist>
-
