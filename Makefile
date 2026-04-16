@@ -5,7 +5,6 @@ DIST_DIR ?= dist
 APP_DIR := $(DIST_DIR)/$(APP_NAME).app
 CONTENTS_DIR := $(APP_DIR)/Contents
 MACOS_DIR := $(CONTENTS_DIR)/MacOS
-RESOURCES_DIR := $(CONTENTS_DIR)/Resources
 
 INFO_PLIST := Packaging/Info.plist
 
@@ -29,15 +28,15 @@ bundle: build
 	@test -f "$(LAUNCHER_BIN)" || (echo "Missing: $(LAUNCHER_BIN) (did you name the target Launcher?)" && exit 1)
 
 	rm -rf "$(APP_DIR)"
-	mkdir -p "$(MACOS_DIR)" "$(RESOURCES_DIR)"
+	mkdir -p "$(MACOS_DIR)"
 
 	cp "$(INFO_PLIST)" "$(CONTENTS_DIR)/Info.plist"
 
 	cp "$(RUNNER_BIN)" "$(MACOS_DIR)/runner"
 	chmod +x "$(MACOS_DIR)/runner"
 
-	cp "$(LAUNCHER_BIN)" "$(RESOURCES_DIR)/launcher"
-	chmod +x "$(RESOURCES_DIR)/launcher"
+	cp "$(LAUNCHER_BIN)" "$(MACOS_DIR)/launcher"
+	chmod +x "$(MACOS_DIR)/launcher"
 
 clean:
 	swift package clean
