@@ -11,7 +11,7 @@ GameStub is a Swift program that enables macOS Game Mode for Java games such as 
 When creating the game process, replace the executable path with:
 
 ```bash
-/path/to/GameStub.app/Contents/Resources/launcher
+/path/to/GameStub.app/Contents/MacOS/launcher
 ```
 
 and insert the absolute path to `java` before the arguments.
