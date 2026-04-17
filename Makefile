@@ -66,7 +66,7 @@ notarize: zip
 		--keychain-profile "$(NOTARY_PROFILE)" \
 		--wait
 	xcrun stapler staple "$(APP_DIR)"
- 	xcrun stapler validate "$(APP_DIR)"
+	xcrun stapler validate "$(APP_DIR)"
 
 release: notarize
 
