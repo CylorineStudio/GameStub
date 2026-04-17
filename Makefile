@@ -22,7 +22,7 @@ ENTITLEMENTS ?= Packaging/GameStub.entitlements
 SWIFT_DEFINES ?=
 SWIFT_FLAGS := $(foreach d,$(SWIFT_DEFINES),-Xswiftc -D -Xswiftc $(d))
 
-.PHONY: all build bundle clean sign notarize zip verify release
+.PHONY: all build bundle clean sign notarize zip release
 
 all: bundle
 
@@ -65,6 +65,8 @@ notarize: zip
 	xcrun notarytool submit "$(ZIP_PATH)" \
 		--keychain-profile "$(NOTARY_PROFILE)" \
 		--wait
+	xcrun stapler staple "$(APP_DIR)"
+ 	xcrun stapler validate "$(APP_DIR)"
 
 release: notarize
 
