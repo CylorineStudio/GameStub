@@ -12,6 +12,7 @@ __MACOSX
 # Build
 dist/
 build/
+.env.local
 
 # IntelliJ IDEA
 .idea/
