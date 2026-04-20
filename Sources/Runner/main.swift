@@ -158,7 +158,7 @@ if holder {
     
     dispatchMain()
 } else {
-    let delegate: ApplicationDelegate = .init()
+    let delegate = ApplicationDelegate()
     NSApplication.shared.delegate = delegate
     NSApplication.shared.run()
 }

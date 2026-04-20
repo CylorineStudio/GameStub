@@ -13,14 +13,19 @@ func log(_ message: String, error: Bool = false) {
     fflush(error ? stderr : stdout)
 }
 
+func cleanup(_ socketPath: String, _ sockfd: Int32) {
+    close(sockfd)
+    unlink(socketPath)
+}
+
 func makeServerSocket() -> (String, Int32) {
     let dateFormatter: DateFormatter = .init()
     dateFormatter.dateFormat = "yyyy_MM_dd-HH-mm-ss"
-    let socketPath: String = "/tmp/gamestub-\(dateFormatter.string(from: .now)).sock"
+    let socketPath = "/tmp/gamestub-\(dateFormatter.string(from: .now)).sock"
     unlink(socketPath)
     
-    let serverSocket = socket(AF_UNIX, SOCK_STREAM, 0)
-    if serverSocket < 0 {
+    let sockfd = socket(AF_UNIX, SOCK_STREAM, 0)
+    if sockfd < 0 {
         perror("socket")
         log("Unable to relay logs and detect process termination, exiting", error: true)
         exit(1)
@@ -31,26 +36,26 @@ func makeServerSocket() -> (String, Int32) {
     strcpy(&addr.sun_path.0, socketPath)
     let bindResult: Int32 = withUnsafePointer(to: &addr) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            bind(sockfd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
         }
     }
     if bindResult != 0 {
         perror("socket")
         log("Unable to relay logs and detect process termination, exiting", error: true)
-        close(serverSocket)
+        cleanup(socketPath, sockfd)
         exit(1)
     }
     
-    return (socketPath, serverSocket)
+    return (socketPath, sockfd)
 }
 
 func acceptWithTimeout(serverSocket: Int32, timeoutMilliseconds: Int32) -> Int32? {
-    var pfd: pollfd = .init()
+    var pfd = pollfd()
     pfd.fd = serverSocket
     pfd.events = Int16(POLLIN)
     pfd.revents = 0
     
-    let rc: Int32 = poll(&pfd, 1, timeoutMilliseconds)
+    let rc = poll(&pfd, 1, timeoutMilliseconds)
     if rc == 0 {
         return nil // timeout
     }
@@ -67,24 +72,13 @@ func acceptWithTimeout(serverSocket: Int32, timeoutMilliseconds: Int32) -> Int32
     return clientSocket
 }
 
-let (socketPath, serverSocket) = makeServerSocket()
-
-log("Listening for UDS connections: \(socketPath)")
-listen(serverSocket, 1)
-
-func startSocket() {
-    defer {
-        close(serverSocket)
-        unlink(socketPath)
-    }
-    
+func startSocket() -> Int32 {
     guard let clientSocket: Int32 = acceptWithTimeout(serverSocket: serverSocket, timeoutMilliseconds: 10_000) else {
         log("UDS accept timed out after 10s", error: true)
         log("Unable to relay logs and detect process termination, exiting", error: true)
         exit(0)
     }
     log("UDS connection accepted")
-    defer { close(clientSocket) }
     
     var lastMessages: [String] = []
     var exitCode: Int32?
@@ -109,7 +103,7 @@ func startSocket() {
                 let exitCodeSize: Int = MemoryLayout<Int32>.size
                 guard bytesRead >= 1 + exitCodeSize else {
                     log("Incomplete exit code message (bytesRead=\(bytesRead))", error: true)
-                    exit(1)
+                    return 1
                 }
                 var decodedExitCode: Int32 = 0
                 withUnsafeMutableBytes(of: &decodedExitCode) { destination in
@@ -120,22 +114,23 @@ func startSocket() {
         } else if bytesRead == 0 {
             guard let exitCode else {
                 log("JVM holder terminated unexpectedly (unexpected socket EOF)", error: true)
-                exit(1)
+                return 1
             }
             log("Game exited with exit code \(exitCode)")
-            exit(exitCode)
+            return exitCode
         } else {
             perror("read")
-            exit(1)
+            return 1
         }
     }
 }
 
-let arguments: [String] = ProcessInfo.processInfo.arguments
+let arguments = ProcessInfo.processInfo.arguments
 
-var appBundleURL: URL = .init(fileURLWithPath: arguments[0])
+let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: arguments[0])
+var appBundleURL = executableURL
 guard FileManager.default.fileExists(atPath: appBundleURL.path) else {
-    log("Executable does not exist: \(arguments[0])", error: true)
+    log("Executable does not exist: \(executableURL)", error: true)
     exit(EXIT_FAILURE)
 }
 while true {
@@ -148,6 +143,11 @@ while true {
         break
     }
 }
+
+let (socketPath, serverSocket) = makeServerSocket()
+
+log("Listening for UDS connections: \(socketPath)")
+listen(serverSocket, 1)
 
 var runnerArguments: [String] = [
     "--holder",
@@ -190,6 +190,7 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
             let handler: () -> Void = {
                 if application.isTerminated { return }
                 kill(pid, SIGTERM)
+                cleanup(socketPath, serverSocket)
                 exit(0)
             }
             
@@ -206,7 +207,11 @@ NSWorkspace.shared.openApplication(at: appBundleURL, configuration: configuratio
         }
         
         DispatchQueue.global(qos: .background).async {
-            startSocket()
+            let exitCode = startSocket()
+            DispatchQueue.main.async {
+                cleanup(socketPath, serverSocket)
+                exit(exitCode)
+            }
         }
     }
 }
